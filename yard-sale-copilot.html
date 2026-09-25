@@ -66,7 +66,7 @@
     .stat small { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; }
     .haul { height: 10px; background: var(--kraft-dark); border-radius: 99px; margin-top: 10px; overflow: hidden; }
     .haul-fill {
-      height: 100%; width: 0; border-radius: 99px; transition: width .5s cubic-bezier(.2,.8,.2,1);
+      height: 100%; width: 100%; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.2,.8,.2,1);
       background: repeating-linear-gradient(45deg, var(--green) 0 10px, #2aa56f 10px 20px);
     }
 
@@ -132,7 +132,7 @@
     .progress.open { display: block; }
     .progress-label { font-size: 13px; margin-bottom: 6px; }
     .progress-bg { height: 8px; background: #ffe2cc; border-radius: 99px; overflow: hidden; }
-    .progress-fill { height: 100%; width: 0; background: var(--orange); transition: width .25s; }
+    .progress-fill { height: 100%; width: 100%; transform: scaleX(0); transform-origin: left; background: var(--orange); transition: transform .25s; }
 
     /* ---------- Toolbar ---------- */
     .toolbar { display: flex; gap: 8px; align-items: center; margin: 8px 0 12px; flex-wrap: wrap; }
@@ -648,7 +648,7 @@ async function geocode() {
     const s = queue[0];
     const total = done + queue.length;
     $('progressLabel').textContent = `📍 Finding addresses… ${done + 1} of ${total}`;
-    $('progressFill').style.width = Math.round(done / total * 100) + '%';
+    $('progressFill').style.transform = `scaleX(${done / total})`;
     let lat = null, lon = null, err = null;
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(s.address)}&format=json&limit=1&countrycodes=us`);
@@ -671,7 +671,7 @@ async function geocode() {
 
   geocodeRunning = false;
   if (epoch !== geocodeEpoch || !done) { $('progress').classList.remove('open'); return; }
-  $('progressFill').style.width = '100%';
+  $('progressFill').style.transform = 'scaleX(1)';
   $('progressLabel').textContent = failed
     ? `Found ${found}, couldn't find ${failed} — tap ↻ after fixing the address`
     : `Found all ${found} address${found === 1 ? '' : 'es'} 🎉`;
@@ -744,7 +744,7 @@ function renderStats() {
   $('statFlagged').textContent = sales.filter(s => s.flagged).length;
   const rk = routeKm();
   $('statMiles').textContent = rk ? (rk * 0.621371).toFixed(1) : '–';
-  $('haulFill').style.width = sales.length ? (visited / sales.length * 100) + '%' : '0';
+  $('haulFill').style.transform = `scaleX(${sales.length ? visited / sales.length : 0})`;
 }
 
 function toggleVisited(id) {
