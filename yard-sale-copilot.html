@@ -759,6 +759,7 @@ function renderStats() {
 function toggleVisited(id) {
   const s = byId(id); if (!s) return;
   s.visited = !s.visited;
+  s.visitedAt = s.visited ? Date.now() : undefined;
   if (s.visited) celebrate(s);
   refresh();
 }
@@ -818,6 +819,7 @@ function markNextVisited() {
   const next = getNextSale();
   if (!next) return;
   next.visited = true;
+  next.visitedAt = Date.now();
   celebrate(next);
   refresh();
   if ($('directionsView').classList.contains('active')) showDirections();
@@ -861,22 +863,27 @@ async function showDirections() {
   const next = getNextSale();
   if (!next) { box.innerHTML = ''; return; }
   if (!hasLoc(next)) { box.innerHTML = '<div class="empty"><big>Hang on…</big>Still finding this address on the map.</div>'; return; }
-  if (!userLoc) {
-    box.innerHTML = `<div class="empty"><big>Where are you?</big>Turn-by-turn needs your location.<br><br>
-      ${locError ? `<p class="meta failed" style="text-align:left">${esc(locError)}</p>` : ''}
-      <button class="btn primary" onclick="startLocation(true)" ${locating ? 'disabled' : ''}>${locating ? '⏳ Finding you…' : '📍 Use my location'}</button></div>`;
+  // Without a GPS fix, route from the stop you most recently arrived at.
+  const lastStop = sales.filter(x => x.visited && hasLoc(x) && x.visitedAt).sort((a, b) => b.visitedAt - a.visitedAt)[0];
+  const origin = userLoc || lastStop;
+  const locBtn = `<button class="btn primary" onclick="startLocation(true)" ${locating ? 'disabled' : ''}>${locating ? '⏳ Finding you…' : '📍 Use my location'}</button>`;
+  const locNote = locError ? `<p class="meta failed" style="text-align:left">${esc(locError)}</p>` : '';
+  if (!origin) {
+    box.innerHTML = `<div class="empty"><big>Where are you?</big>Turn-by-turn needs your location — or tap <b>Arrived</b> at a stop and directions will start from there.<br><br>
+      ${locNote}${locBtn}</div>`;
     return;
   }
+  const fromNote = userLoc ? '' : `<p class="route-sum">From your last stop, ${esc(lastStop.address)}. ${locating ? '' : locBtn}</p>${locNote}`;
   box.innerHTML = '<div class="empty">Plotting the way…</div>';
   const target = next.id;
   try {
-    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${userLoc.lon},${userLoc.lat};${next.lon},${next.lat}?steps=true&overview=false`);
+    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${next.lon},${next.lat}?steps=true&overview=false`);
     const data = await res.json();
     if (getNextSale()?.id !== target) return; // user moved on while we waited
     if (!data.routes || !data.routes.length) throw new Error('no route');
     const r = data.routes[0];
     const steps = r.legs.flatMap(l => l.steps);
-    box.innerHTML = `<p class="route-sum">${fmtKm(r.distance / 1000)} · about ${Math.max(1, Math.round(r.duration / 60))} min</p>` +
+    box.innerHTML = fromNote + `<p class="route-sum">${fmtKm(r.distance / 1000)} · about ${Math.max(1, Math.round(r.duration / 60))} min</p>` +
       steps.map(st => `
         <div class="step">
           <div class="step-ico">${st.maneuver.type === 'arrive' ? '🏁' : st.maneuver.type === 'depart' ? '🚗' : ICONS[st.maneuver.modifier] || '↑'}</div>
@@ -1118,13 +1125,28 @@ function startLocation(userAsked) {
   }
   if (locating) return;
   locating = true;
+  // Some iPhones never call back at all, even past the timeout, so keep our own clock.
+  const watchdog = setTimeout(() => {
+    if (!locating) return;
+    locating = false;
+    locError = "Your phone isn't answering location requests from this page. Directions will start from the last stop you tapped Arrived at, and 🚗 Go still navigates from where you are.";
+    if ($('directionsView').classList.contains('active')) showDirections();
+  }, 20000);
+  navigator.permissions?.query({ name: 'geolocation' }).then(p => {
+    if (p.state === 'denied' && locating) {
+      clearTimeout(watchdog); locating = false; locError = locErrorText({ code: 1 });
+      if ($('directionsView').classList.contains('active')) showDirections();
+    }
+  }).catch(() => {});
   if (userAsked) { locError = null; showDirections(); }
   navigator.geolocation.getCurrentPosition(pos => {
+    clearTimeout(watchdog);
     locating = false;
     onPosition(pos);
     startWatch();
     if (userAsked) { toast('📍 Found you'); showDirections(); }
   }, err => {
+    clearTimeout(watchdog);
     locating = false;
     locError = locErrorText(err);
     if (userAsked) toast('⚠️ Couldn\'t get your location');
