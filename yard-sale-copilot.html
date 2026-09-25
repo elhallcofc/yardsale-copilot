@@ -376,7 +376,8 @@
     <button class="btn" style="width:100%" onclick="downloadKmlFromLink()">⬇️ Download map file</button>
     <p style="margin-top:16px"><b>Step 2 — pick the file.</b> Works with <code>.kml</code> from Google My Maps / Google Earth, or a <code>.txt</code>/<code>.csv</code> list with one address per line.</p>
     <label class="drop" id="dropZone">
-      <input type="file" id="fileInput" accept=".kml,.txt,.csv,application/vnd.google-earth.kml+xml,text/plain" hidden />
+      <!-- No accept filter: iOS greys out .kml because it has no system type for it. importFile() validates content instead. -->
+      <input type="file" id="fileInput" hidden />
       <span>📂 Choose a file<br><small>or drop it here</small></span>
     </label>
     <div class="sheet-btns"><button class="btn" onclick="closeModal('importModal')">Close</button></div>
@@ -599,6 +600,7 @@ async function importFile(file) {
     const text = await file.text();
     const isKml = /\.kml$/i.test(file.name) || /<kml[\s>]/i.test(text.slice(0, 500));
     if (/\.kmz$/i.test(file.name)) throw new Error('KMZ is zipped — re-download with "Export to .KML" checked');
+    if (!isKml && (/^(image|video|audio)\//.test(file.type) || text.includes('\u0000'))) throw new Error('Pick a .kml map file or a text list of addresses');
     const lines = isKml ? kmlToLines(text) : text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     if (!lines.length) throw new Error('No pins or addresses found in that file');
     const { added, dupes } = pushLines(lines);
