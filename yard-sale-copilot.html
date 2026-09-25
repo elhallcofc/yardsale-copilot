@@ -188,13 +188,28 @@
     .empty { text-align: center; padding: 40px 16px; color: var(--ink-soft); }
     .empty big { display: block; font-family: var(--marker); font-size: 26px; color: var(--ink); margin-bottom: 6px; transform: rotate(-2deg); }
 
-    /* ---------- Directions ---------- */
-    .steps { counter-reset: s; }
-    .step { display: flex; gap: 12px; padding: 12px; background: var(--paper); border-radius: 10px; margin-bottom: 8px; box-shadow: var(--shadow); }
-    .step-ico { flex: 0 0 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; font-size: 17px; }
-    .step-text { font-size: 16px; font-weight: 600; line-height: 1.35; }
-    .step-dist { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
-    .route-sum { font-size: 14px; color: var(--ink-soft); margin: 0 0 10px; }
+    /* ---------- Today's route ---------- */
+    .route-head { background: var(--ink); color: var(--paper); border-radius: 14px; padding: 14px; margin: 4px 0 14px; box-shadow: var(--shadow); }
+    .route-head h2 { font-family: var(--marker); font-weight: 400; font-size: 22px; margin: 0 0 4px; }
+    .route-head .big { font-size: 15px; line-height: 1.5; }
+    .route-head .big b { color: var(--yellow); }
+    .route-head .browse { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+    .route-head .chip { border-color: var(--paper); color: var(--paper); padding: 3px 10px; }
+    .route-head .chip.active { background: var(--yellow); color: var(--ink); border-color: var(--yellow); }
+    .origin { font-size: 14px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 4px 6px; }
+    .origin .btn { flex: 0 0 auto; padding: 5px 10px; font-size: 13px; }
+    .leg { margin-left: 24px; padding: 8px 0 8px 22px; border-left: 3px dashed var(--line); font-size: 13px; color: var(--ink-soft); }
+    .stop { display: flex; gap: 12px; align-items: center; background: var(--paper); border-radius: 12px; padding: 10px 12px; box-shadow: var(--shadow); }
+    .stop .dot { margin-left: 0; }
+    .stop.first { outline: 3px solid var(--yellow); outline-offset: -1px; }
+    .stop-body { flex: 1; min-width: 0; }
+    .stop-eta { font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+    .stop-addr { font-weight: 700; font-size: 15px; overflow-wrap: anywhere; cursor: pointer; }
+    .stop-btns { display: flex; gap: 6px; flex: 0 0 auto; }
+    .stop-btns .btn { padding: 7px 10px; font-size: 13px; text-decoration: none; text-align: center; }
+    .done-list { margin-top: 18px; font-size: 14px; color: var(--ink-soft); }
+    .done-list summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+    .done-list li { text-decoration: line-through; text-decoration-color: var(--green); }
 
     /* ---------- Map ---------- */
     #map { position: absolute; inset: 0; background: var(--kraft-dark); }
@@ -309,9 +324,8 @@
       <div class="tags" id="salesList"></div>
     </section>
 
-    <section class="view" id="directionsView">
-      <div id="navSlot"></div>
-      <div id="directionsSteps" class="steps"></div>
+    <section class="view" id="routeView">
+      <div id="routeBox"></div>
     </section>
 
     <section class="view" id="mapView">
@@ -326,7 +340,7 @@
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="list" role="tab"><span class="e">🏷️</span>Stops</button>
-    <button class="tab" data-tab="directions" role="tab"><span class="e">🧭</span>Directions</button>
+    <button class="tab" data-tab="route" role="tab"><span class="e">🛣️</span>Today</button>
     <button class="tab" data-tab="map" role="tab"><span class="e">🗺️</span>Map</button>
   </nav>
 </div>
@@ -391,7 +405,7 @@
     <ol>
       <li><b>Add stops</b> one at a time or paste a whole list.</li>
       <li>Tap <b>✨ Plan route</b> to order them into the shortest trip from where you are.</li>
-      <li>Hit <b>Go</b> to open your maps app, or use the Directions tab.</li>
+      <li>Hit <b>Go</b> to drive there with your maps app. The <b>Today</b> tab shows the whole day: every stop in order, drive times, and when you'll finish.</li>
       <li>Tap <b>Arrived</b> at each sale. 🚩 anything worth a second look.</li>
     </ol>
     <p>Everything is saved on this device only. Use "Copy list to share" to send your list to someone else — they can paste it right in.</p>
@@ -506,10 +520,11 @@ function planRoute(announce, startId) {
     : `✨ Route planned — ${ordered.length} stops, about ${fmtKm(routeKm())}`);
 }
 
+// Driving distance of the remaining route: real road legs once fetched, estimates until then.
 function routeKm() {
   const stops = orderedStops().filter(hasLoc);
-  let total = 0, prev = userLoc;
-  stops.forEach(s => { if (prev) total += km(prev, s); prev = s; });
+  let total = 0, prev = routeOrigin().pt;
+  stops.forEach(s => { if (prev) total += legFor(prev, s).m / 1000; prev = s; });
   return total;
 }
 
@@ -778,7 +793,7 @@ function resetVisited() {
   toast('All stops marked unvisited');
 }
 
-// ---------- Next-stop banner (shared by Stops and Directions tabs) ----------
+// ---------- Next-stop banner (Stops tab) ----------
 function mapsUrl(dest, waypoints = []) {
   const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document;
   if (isApple && !waypoints.length) return `https://maps.apple.com/?daddr=${dest.lat},${dest.lon}&dirflg=d`;
@@ -812,7 +827,7 @@ function nextBannerHtml() {
 function renderNav() {
   const html = nextBannerHtml();
   $('nextSlot').innerHTML = html;
-  $('navSlot').innerHTML = html;
+  if (routeActive()) renderRoute();
 }
 
 function markNextVisited() {
@@ -822,7 +837,6 @@ function markNextVisited() {
   next.visitedAt = Date.now();
   celebrate(next);
   refresh();
-  if ($('directionsView').classList.contains('active')) showDirections();
 }
 
 function skipNext() {
@@ -833,65 +847,127 @@ function skipNext() {
   if (nextTargetId === next.id) { nextTargetId = null; store(KEY_NEXT, null); }
   refresh();
   toast('Moved to the end of the route');
-  if ($('directionsView').classList.contains('active')) showDirections();
 }
 
-// ---------- Directions ----------
-const ICONS = { left: '↰', 'slight left': '↖', 'sharp left': '↰', right: '↱', 'slight right': '↗', 'sharp right': '↱', straight: '↑', uturn: '↶' };
+// ---------- Today's route ----------
+// Drive times come from OSRM (free, public) for the whole ordered route in chunks,
+// cached per leg. Until they arrive — or if the server is down — legs are estimated
+// from straight-line distance and shown with "~".
+const KEY_BROWSE = 'yardSaleBrowseMin';
+const legCache = new Map();
+const legKey = (a, b) => `${a.lat.toFixed(5)},${a.lon.toFixed(5)}>${b.lat.toFixed(5)},${b.lon.toFixed(5)}`;
+let routeFetchToken = 0;
 
-function buildInstruction(step) {
-  const { type, modifier, exit } = step.maneuver;
-  const name = step.name && step.name.trim();
-  const onto = name ? ' onto ' + name : '', along = name ? ' on ' + name : '';
-  const words = { uturn: 'Make a U-turn', 'sharp right': 'Turn sharp right', right: 'Turn right', 'slight right': 'Keep slightly right',
-                  straight: 'Continue straight', 'slight left': 'Keep slightly left', left: 'Turn left', 'sharp left': 'Turn sharp left' };
-  switch (type) {
-    case 'depart': return 'Head out' + along;
-    case 'arrive': return 'Arrive — the sale is ' + (modifier && modifier !== 'straight' ? 'on your ' + modifier : 'ahead') + ' 🛍️';
-    case 'turn': case 'end of road': return (words[modifier] || 'Turn') + onto;
-    case 'merge': return 'Merge' + onto;
-    case 'on ramp': return 'Take the ramp' + onto;
-    case 'off ramp': return 'Take the exit' + onto;
-    case 'fork': return 'Keep ' + (modifier || 'straight') + ' at the fork' + onto;
-    case 'roundabout': case 'rotary': case 'roundabout turn': return 'At the roundabout, take exit ' + (exit || '') + onto;
-    default: return (words[modifier] || 'Continue') + (type === 'new name' || type === 'continue' ? onto : along);
+const routeActive = () => $('routeView').classList.contains('active');
+function browseMin() { return Number(load(KEY_BROWSE, '10')) || 10; }
+function setBrowse(m) { store(KEY_BROWSE, String(m)); renderRoute(true); }
+
+function legFor(a, b) {
+  const hit = legCache.get(legKey(a, b));
+  if (hit) return hit;
+  const m = km(a, b) * 1000 * 1.35;          // roads are rarely straight
+  return { m, sec: m / 11 + 60, est: true };  // ~25 mph plus a minute to park
+}
+
+function fmtDur(sec) {
+  const min = Math.max(1, Math.round(sec / 60));
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} hr` + (min % 60 ? ` ${min % 60} min` : '');
+}
+function fmtClock(t) {
+  const d = new Date(t), time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+  return days === 0 ? time : days === 1 ? `${time} tomorrow` : `${time} ${d.toLocaleDateString([], { weekday: 'short' })}`;
+}
+
+function routeOrigin() {
+  if (userLoc) return { pt: userLoc, label: '📍 Starting from where you are' };
+  const last = sales.filter(x => x.visited && hasLoc(x) && x.visitedAt).sort((a, b) => b.visitedAt - a.visitedAt)[0];
+  if (last) return { pt: last, label: `Starting from your last stop, ${esc(last.address)}` };
+  return { pt: null, label: 'Starting at stop 1' };
+}
+
+async function fetchLegs(points, token) {
+  const CHUNK = 25; // keep requests small for the public server
+  for (let i = 0; i < points.length - 1; i += CHUNK - 1) {
+    const chunk = points.slice(i, i + CHUNK);
+    if (chunk.slice(1).every((p, k) => legCache.has(legKey(chunk[k], p)))) continue;
+    try {
+      const coords = chunk.map(p => `${p.lon},${p.lat}`).join(';');
+      const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`);
+      const data = await res.json();
+      if (!data.routes?.length) continue;
+      data.routes[0].legs.forEach((leg, k) => legCache.set(legKey(chunk[k], chunk[k + 1]), { m: leg.distance, sec: leg.duration + 60, est: false }));
+    } catch { return; } // server busy — keep the estimates
+    if (token !== routeFetchToken) return;
+    renderStats();
+    if (routeActive()) renderRoute(true);
   }
 }
 
-async function showDirections() {
-  const box = $('directionsSteps');
-  const next = getNextSale();
-  if (!next) { box.innerHTML = ''; return; }
-  if (!hasLoc(next)) { box.innerHTML = '<div class="empty"><big>Hang on…</big>Still finding this address on the map.</div>'; return; }
-  // Without a GPS fix, route from the stop you most recently arrived at.
-  const lastStop = sales.filter(x => x.visited && hasLoc(x) && x.visitedAt).sort((a, b) => b.visitedAt - a.visitedAt)[0];
-  const origin = userLoc || lastStop;
-  const locBtn = `<button class="btn primary" onclick="startLocation(true)" ${locating ? 'disabled' : ''}>${locating ? '⏳ Finding you…' : '📍 Use my location'}</button>`;
-  const locNote = locError ? `<p class="meta failed" style="text-align:left">${esc(locError)}</p>` : '';
-  if (!origin) {
-    box.innerHTML = `<div class="empty"><big>Where are you?</big>Turn-by-turn needs your location — or tap <b>Arrived</b> at a stop and directions will start from there.<br><br>
-      ${locNote}${locBtn}</div>`;
+function renderRoute(fromFetch) {
+  const box = $('routeBox');
+  const stops = orderedStops();
+  const located = stops.filter(hasLoc);
+  const visited = sales.filter(s => s.visited);
+  if (!sales.length) { box.innerHTML = '<div class="empty"><big>No stops yet</big>Add or import some sales on the Stops tab.</div>'; return; }
+  if (!stops.length) {
+    box.innerHTML = `<div class="next done"><div class="next-label">Tour complete! 🎉</div><div class="next-meta" style="color:#fff">You hit all ${sales.length} stops. Enjoy the haul.</div></div>`;
     return;
   }
-  const fromNote = userLoc ? '' : `<p class="route-sum">From your last stop, ${esc(lastStop.address)}. ${locating ? '' : locBtn}</p>${locNote}`;
-  box.innerHTML = '<div class="empty">Plotting the way…</div>';
-  const target = next.id;
-  try {
-    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${next.lon},${next.lat}?steps=true&overview=false`);
-    const data = await res.json();
-    if (getNextSale()?.id !== target) return; // user moved on while we waited
-    if (!data.routes || !data.routes.length) throw new Error('no route');
-    const r = data.routes[0];
-    const steps = r.legs.flatMap(l => l.steps);
-    box.innerHTML = fromNote + `<p class="route-sum">${fmtKm(r.distance / 1000)} · about ${Math.max(1, Math.round(r.duration / 60))} min</p>` +
-      steps.map(st => `
-        <div class="step">
-          <div class="step-ico">${st.maneuver.type === 'arrive' ? '🏁' : st.maneuver.type === 'depart' ? '🚗' : ICONS[st.maneuver.modifier] || '↑'}</div>
-          <div><div class="step-text">${esc(buildInstruction(st))}</div>${st.distance ? `<div class="step-dist">${fmtKm(st.distance / 1000)}</div>` : ''}</div>
-        </div>`).join('');
-  } catch {
-    box.innerHTML = `<div class="empty"><big>No route found</big>The free routing server may be busy. Try the 🚗 Go button to use your maps app.</div>`;
-  }
+
+  const origin = routeOrigin();
+  const points = (origin.pt ? [origin.pt] : []).concat(located);
+  const browse = browseMin() * 60;
+  let t = Date.now(), driveSec = 0, driveM = 0, anyEst = false;
+  const rows = located.map((s, i) => {
+    const prev = origin.pt ? points[i] : points[i - 1];
+    let legHtml = '';
+    if (prev) {
+      const leg = legFor(prev, s);
+      anyEst = anyEst || leg.est;
+      driveSec += leg.sec; driveM += leg.m; t += leg.sec * 1000;
+      legHtml = `<div class="leg">🚗 ${leg.est ? '~' : ''}${fmtDur(leg.sec)} · ${fmtKm(leg.m / 1000)}</div>`;
+    }
+    const arrive = t;
+    t += browse * 1000;
+    const first = i === 0;
+    return `${legHtml}
+      <div class="stop${first ? ' first' : ''}">
+        <div class="dot ${s.flagged ? 'flagged' : ''}">${i + 1}</div>
+        <div class="stop-body">
+          <div class="stop-eta">${first ? 'Next · ' : ''}~${fmtClock(arrive)}</div>
+          <div class="stop-addr" onclick="focusOnSale('${s.id}')">${esc(s.address)}${s.flagged ? ' 🚩' : ''}</div>
+          ${s.notes ? `<div class="notes">“${esc(s.notes)}”</div>` : ''}
+        </div>
+        <div class="stop-btns">
+          ${first ? `<button class="btn" onclick="markNextVisited()" title="Arrived" aria-label="Arrived">🛍️</button>` : ''}
+          <a class="btn go" href="${mapsUrl(s)}" target="_blank" rel="noopener">🚗 Go</a>
+        </div>
+      </div>`;
+  }).join('');
+
+  const pending = stops.length - located.length;
+  const locBtn = !userLoc
+    ? `<button class="btn" onclick="startLocation(true)" ${locating ? 'disabled' : ''}>${locating ? '⏳ Finding you…' : '📍 Use my location'}</button>` : '';
+  const tilde = anyEst ? '~' : '';
+
+  box.innerHTML = `
+    <div class="route-head">
+      <h2>Today's route</h2>
+      <div class="big"><b>${located.length}</b> stop${located.length === 1 ? '' : 's'} to go · <b>${tilde}${fmtKm(driveM / 1000)}</b> of driving (${tilde}${fmtDur(driveSec)})<br>
+        ${fmtDur((t - Date.now()) / 1000)} in all if you start now — done around <b>${fmtClock(t)}</b></div>
+      <div class="browse">Time at each sale:
+        ${[5, 10, 15, 20].map(m => `<button class="chip ${browseMin() === m ? 'active' : ''}" onclick="setBrowse(${m})">${m} min</button>`).join('')}
+      </div>
+    </div>
+    <div class="origin">${origin.label} ${locBtn}</div>
+    ${locError && !userLoc ? `<p class="meta failed">${esc(locError)}</p>` : ''}
+    ${rows}
+    ${pending ? `<p class="meta" style="margin-top:14px">${pending} more stop${pending === 1 ? ' is' : 's are'} still being found on the map.</p>` : ''}
+    ${visited.length ? `<details class="done-list"><summary>✓ Visited (${visited.length})</summary><ul>${visited.map(v => `<li>${esc(v.address)}</li>`).join('')}</ul></details>` : ''}`;
+
+  if (!fromFetch) fetchLegs(points, ++routeFetchToken);
 }
 
 // ---------- Map ----------
@@ -966,7 +1042,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === tab + 'View'));
   if (tab === 'map') { initMap(); renderMap(); setTimeout(() => map.invalidateSize(), 60); }
-  if (tab === 'directions') showDirections();
+  if (tab === 'route') renderRoute();
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
@@ -1096,7 +1172,7 @@ function onPosition(pos) {
   if (first || !lastRenderLoc || km(lastRenderLoc, userLoc) > 0.05) {
     lastRenderLoc = userLoc;
     renderList(); renderNav(); renderStats(); renderMap();
-    if (first && $('directionsView').classList.contains('active')) showDirections();
+    if (first && routeActive()) renderRoute();
   }
 }
 
@@ -1120,7 +1196,7 @@ function startWatch() {
 function startLocation(userAsked) {
   if (!navigator.geolocation || !window.isSecureContext) {
     locError = 'This browser can\'t share your location with this page.';
-    if (userAsked) { toast('⚠️ Location isn\'t available here'); showDirections(); }
+    if (userAsked) { toast('⚠️ Location isn\'t available here'); if (routeActive()) renderRoute(); }
     return;
   }
   if (locating) return;
@@ -1129,28 +1205,28 @@ function startLocation(userAsked) {
   const watchdog = setTimeout(() => {
     if (!locating) return;
     locating = false;
-    locError = "Your phone isn't answering location requests from this page. Directions will start from the last stop you tapped Arrived at, and 🚗 Go still navigates from where you are.";
-    if ($('directionsView').classList.contains('active')) showDirections();
+    locError = "Your phone isn't answering location requests from this page. Drive times will start from the last stop you tapped Arrived at, and 🚗 Go still navigates from where you are.";
+    if (routeActive()) renderRoute();
   }, 20000);
   navigator.permissions?.query({ name: 'geolocation' }).then(p => {
     if (p.state === 'denied' && locating) {
       clearTimeout(watchdog); locating = false; locError = locErrorText({ code: 1 });
-      if ($('directionsView').classList.contains('active')) showDirections();
+      if (routeActive()) renderRoute();
     }
   }).catch(() => {});
-  if (userAsked) { locError = null; showDirections(); }
+  if (userAsked) { locError = null; if (routeActive()) renderRoute(); }
   navigator.geolocation.getCurrentPosition(pos => {
     clearTimeout(watchdog);
     locating = false;
     onPosition(pos);
     startWatch();
-    if (userAsked) { toast('📍 Found you'); showDirections(); }
+    if (userAsked) { toast('📍 Found you'); if (routeActive()) renderRoute(); }
   }, err => {
     clearTimeout(watchdog);
     locating = false;
     locError = locErrorText(err);
     if (userAsked) toast('⚠️ Couldn\'t get your location');
-    if ($('directionsView').classList.contains('active')) showDirections();
+    if (routeActive()) renderRoute();
   }, { enableHighAccuracy: false, maximumAge: 60000, timeout: 15000 });
 }
 
