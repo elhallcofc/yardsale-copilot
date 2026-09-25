@@ -863,7 +863,8 @@ async function showDirections() {
   if (!hasLoc(next)) { box.innerHTML = '<div class="empty"><big>Hang on…</big>Still finding this address on the map.</div>'; return; }
   if (!userLoc) {
     box.innerHTML = `<div class="empty"><big>Where are you?</big>Turn-by-turn needs your location.<br><br>
-      <button class="btn primary" onclick="startLocation(true)">📍 Use my location</button></div>`;
+      ${locError ? `<p class="meta failed" style="text-align:left">${esc(locError)}</p>` : ''}
+      <button class="btn primary" onclick="startLocation(true)" ${locating ? 'disabled' : ''}>${locating ? '⏳ Finding you…' : '📍 Use my location'}</button></div>`;
     return;
   }
   box.innerHTML = '<div class="empty">Plotting the way…</div>';
@@ -1074,24 +1075,61 @@ function celebrate(s) {
   }
 }
 
-// ---------- Location (watches while you drive) ----------
-let watching = false, lastRenderLoc = null;
+// ---------- Location ----------
+// A one-shot fix first (quick, low accuracy, with a timeout so it can't hang silently),
+// then a watch to keep distances fresh while driving. iOS can leave a high-accuracy
+// watch pending forever without calling either callback, so never rely on it alone.
+let watchId = null, lastRenderLoc = null, locating = false, locError = null;
+
+function onPosition(pos) {
+  const first = !userLoc;
+  userLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+  locError = null;
+  // Re-render at most every ~50 m of movement to keep it cheap
+  if (first || !lastRenderLoc || km(lastRenderLoc, userLoc) > 0.05) {
+    lastRenderLoc = userLoc;
+    renderList(); renderNav(); renderStats(); renderMap();
+    if (first && $('directionsView').classList.contains('active')) showDirections();
+  }
+}
+
+function locErrorText(err) {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const app = /CriOS/.test(navigator.userAgent) ? 'Chrome' : 'Safari Websites';
+  if (err.code === 1) return ios
+    ? `Location is blocked for this site. On your iPhone: Settings → Privacy & Security → Location Services → ${app} → "While Using". In Safari also check aA → Website Settings → Location → Allow. Then reload.`
+    : 'Location is blocked for this site. Allow it in your browser\'s site settings, then reload.';
+  if (err.code === 3) return 'Your phone took too long to find you. Try again — being outdoors or having Wi-Fi on helps.';
+  return 'Your phone couldn\'t work out where you are right now. Try again in a moment.';
+}
+
+function startWatch() {
+  if (watchId !== null || !navigator.geolocation) return;
+  watchId = navigator.geolocation.watchPosition(onPosition, () => {
+    navigator.geolocation.clearWatch(watchId); watchId = null; // one-shot fixes still work
+  }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 });
+}
+
 function startLocation(userAsked) {
-  if (!navigator.geolocation || watching) return;
-  watching = true;
-  navigator.geolocation.watchPosition(pos => {
-    const first = !userLoc;
-    userLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-    // Re-render at most every ~50 m of movement to keep it cheap
-    if (first || !lastRenderLoc || km(lastRenderLoc, userLoc) > 0.05) {
-      lastRenderLoc = userLoc;
-      renderList(); renderNav(); renderStats(); renderMap();
-      if (first && $('directionsView').classList.contains('active')) showDirections();
-    }
+  if (!navigator.geolocation || !window.isSecureContext) {
+    locError = 'This browser can\'t share your location with this page.';
+    if (userAsked) { toast('⚠️ Location isn\'t available here'); showDirections(); }
+    return;
+  }
+  if (locating) return;
+  locating = true;
+  if (userAsked) { locError = null; showDirections(); }
+  navigator.geolocation.getCurrentPosition(pos => {
+    locating = false;
+    onPosition(pos);
+    startWatch();
+    if (userAsked) { toast('📍 Found you'); showDirections(); }
   }, err => {
-    watching = false;
-    if (userAsked) toast('Location is blocked — allow it in your browser settings');
-  }, { enableHighAccuracy: true, maximumAge: 15000 });
+    locating = false;
+    locError = locErrorText(err);
+    if (userAsked) toast('⚠️ Couldn\'t get your location');
+    if ($('directionsView').classList.contains('active')) showDirections();
+  }, { enableHighAccuracy: false, maximumAge: 60000, timeout: 15000 });
 }
 
 // ---------- Boot ----------
