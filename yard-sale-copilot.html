@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f3e6cf">
+  <title>Yard Sale Copilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Permanent+Marker&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <style>
+    :root {
+      --kraft: #f3e6cf;
+      --kraft-dark: #e6d3b1;
+      --paper: #fffaf0;
+      --ink: #2b2118;
+      --ink-soft: #6b5a48;
+      --line: #d9c4a0;
+      --pink: #d62a66;
+      --yellow: #ffcf3f;
+      --green: #1e8a5a;
+      --blue: #2a5fd4;
+      --orange: #c45a12;
+      --red: #a8241b;
+      --shadow: 0 2px 0 rgba(43,33,24,.18), 0 6px 14px rgba(43,33,24,.10);
+      --marker: 'Permanent Marker', 'Comic Sans MS', cursive;
+      --body: 'Bricolage Grotesque', -apple-system, 'Segoe UI', sans-serif;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; font-family: var(--body); color: var(--ink); background: var(--kraft); }
+    body {
+      background-color: var(--kraft);
+      background-image: radial-gradient(rgba(107,90,72,.08) 1px, transparent 1px);
+      background-size: 6px 6px;
+    }
+    button { font-family: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; height: 100dvh; max-width: 760px; margin: 0 auto; }
+
+    /* ---------- Header: the cardboard sign ---------- */
+    .header { padding: 12px 16px 10px; position: relative; }
+    .sign-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .sign {
+      font-family: var(--marker); font-size: 26px; line-height: 1; margin: 0;
+      background: var(--paper); padding: 8px 14px 6px; border-radius: 4px;
+      transform: rotate(-2deg); box-shadow: var(--shadow); position: relative;
+    }
+    .sign span { color: var(--pink); }
+    .sign::before, .sign::after {
+      content: ''; position: absolute; top: -6px; width: 14px; height: 14px;
+      background: rgba(255,255,255,.55); border: 1px solid rgba(0,0,0,.06); transform: rotate(35deg);
+    }
+    .sign::before { left: 10px; } .sign::after { right: 10px; }
+    .icon-btn {
+      width: 42px; height: 42px; border-radius: 50%; border: 2px solid var(--ink); background: var(--paper);
+      font-size: 18px; cursor: pointer; display: grid; place-items: center; box-shadow: 0 2px 0 var(--ink);
+    }
+    .icon-btn:active { transform: translateY(2px); box-shadow: none; }
+
+    .stats { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
+    .stat {
+      flex: 1 0 auto; background: var(--paper); border: 1.5px dashed var(--line); border-radius: 10px;
+      padding: 6px 10px; text-align: center; min-width: 70px;
+    }
+    .stat b { display: block; font-size: 20px; font-weight: 800; line-height: 1.1; }
+    .stat small { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; }
+    .haul { height: 10px; background: var(--kraft-dark); border-radius: 99px; margin-top: 10px; overflow: hidden; }
+    .haul-fill {
+      height: 100%; width: 0; border-radius: 99px; transition: width .5s cubic-bezier(.2,.8,.2,1);
+      background: repeating-linear-gradient(45deg, var(--green) 0 10px, #2aa56f 10px 20px);
+    }
+
+    .menu {
+      display: none; position: absolute; top: 60px; right: 16px; z-index: 1200; background: var(--paper);
+      border: 2px solid var(--ink); border-radius: 12px; box-shadow: var(--shadow); min-width: 220px; overflow: hidden;
+    }
+    .menu.open { display: block; }
+    .menu button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 12px 16px; font-size: 15px; cursor: pointer; border-bottom: 1px dashed var(--line); }
+    .menu button:last-child { border-bottom: 0; }
+    .menu button:hover { background: var(--kraft); }
+    .menu .danger { color: var(--red); }
+
+    /* ---------- Views ---------- */
+    .content { flex: 1; min-height: 0; position: relative; }
+    .view { display: none; position: absolute; inset: 0; overflow-y: auto; padding: 0 16px 24px; }
+    .view.active { display: block; }
+    #mapView { padding: 0; }
+
+    /* ---------- Next-stop banner ---------- */
+    .next {
+      background: var(--yellow); border: 2px solid var(--ink); border-radius: 14px; padding: 12px 14px;
+      box-shadow: 0 3px 0 var(--ink); margin: 4px 0 14px; position: relative;
+    }
+    .next-label { font-family: var(--marker); font-size: 14px; letter-spacing: .03em; }
+    .next-addr { font-size: 18px; font-weight: 800; margin: 2px 0 2px; overflow-wrap: anywhere; }
+    .next-meta { font-size: 13px; color: #5a4718; }
+    .next-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .btn {
+      border: 2px solid var(--ink); background: var(--paper); border-radius: 10px; padding: 9px 12px;
+      font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 2px 0 var(--ink); flex: 1 1 auto;
+    }
+    .btn:active { transform: translateY(2px); box-shadow: none; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.primary { background: var(--ink); color: var(--paper); }
+    .btn.go { background: var(--green); color: #fff; }
+    .next.done { background: var(--green); color: #fff; text-align: center; }
+    .next.done .next-label { font-size: 22px; }
+
+    /* ---------- Add ---------- */
+    .add { display: flex; gap: 8px; margin-bottom: 8px; }
+    .add input, textarea, .field {
+      flex: 1; min-width: 0; padding: 11px 12px; font: inherit; font-size: 15px; color: var(--ink);
+      background: var(--paper); border: 2px solid var(--ink); border-radius: 10px;
+    }
+    textarea { width: 100%; min-height: 110px; resize: vertical; font-size: 13px; }
+    input:focus, textarea:focus, .btn:focus-visible, .icon-btn:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+    .add .btn { flex: 0 0 auto; }
+    .linkish { background: none; border: 0; padding: 4px 0; color: var(--ink-soft); font-size: 13px; cursor: pointer; text-decoration: underline dashed; text-underline-offset: 3px; }
+    .import-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .drop {
+      display: grid; place-items: center; text-align: center; padding: 22px 12px; margin-bottom: 4px; cursor: pointer;
+      border: 2.5px dashed var(--ink-soft); border-radius: 14px; background: var(--kraft); font-weight: 700; font-size: 16px;
+    }
+    .drop small { font-weight: 400; color: var(--ink-soft); font-size: 13px; }
+    .drop.over { border-color: var(--green); background: #d7f5e6; }
+    .bulk { display: none; margin: 6px 0 12px; }
+    .bulk.open { display: block; }
+    .bulk p { font-size: 12px; color: var(--ink-soft); margin: 0 0 8px; }
+    .bulk .btn { width: 100%; margin-top: 8px; }
+
+    .progress { display: none; margin: 8px 0 12px; background: var(--paper); border: 1.5px dashed var(--orange); border-radius: 10px; padding: 8px 10px; }
+    .progress.open { display: block; }
+    .progress-label { font-size: 13px; margin-bottom: 6px; }
+    .progress-bg { height: 8px; background: #ffe2cc; border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; width: 0; background: var(--orange); transition: width .25s; }
+
+    /* ---------- Toolbar ---------- */
+    .toolbar { display: flex; gap: 8px; align-items: center; margin: 8px 0 12px; flex-wrap: wrap; }
+    .chips { display: flex; gap: 6px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+    .chip {
+      border: 1.5px solid var(--ink); background: transparent; border-radius: 99px; padding: 5px 11px;
+      font-size: 13px; cursor: pointer; white-space: nowrap; font-weight: 600;
+    }
+    .chip.active { background: var(--ink); color: var(--paper); }
+    .plan-btn { flex: 0 0 auto; background: var(--pink); color: #fff; }
+
+    /* ---------- Price-tag cards ---------- */
+    .tags { display: flex; flex-direction: column; gap: 10px; }
+    .tag {
+      display: flex; gap: 12px; align-items: flex-start; background: var(--paper); padding: 12px 12px 12px 16px;
+      border-radius: 6px 14px 14px 6px; box-shadow: var(--shadow); position: relative;
+      animation: pop .28s cubic-bezier(.2,1.4,.4,1) both;
+    }
+    .tag::before { /* the punched hole */
+      content: ''; position: absolute; left: 6px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px;
+      border-radius: 50%; background: var(--kraft); box-shadow: inset 0 1px 1px rgba(0,0,0,.25);
+    }
+    .tag.is-next { outline: 3px solid var(--yellow); outline-offset: -1px; }
+    .tag.visited { opacity: .62; }
+    .tag.visited .addr { text-decoration: line-through; text-decoration-color: var(--green); text-decoration-thickness: 2px; }
+    @keyframes pop { from { transform: scale(.96); opacity: 0; } }
+
+    .dot {
+      flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+      font-weight: 800; font-size: 14px; color: #fff; background: var(--blue); margin-left: 6px;
+      box-shadow: inset 0 -3px 0 rgba(0,0,0,.15); transform: rotate(-8deg);
+    }
+    .dot.flagged { background: var(--orange); }
+    .dot.visited { background: var(--green); }
+    .dot.failed { background: var(--red); }
+    .dot.pending { background: #b9a88c; }
+    .tag-body { flex: 1; min-width: 0; }
+    .badge { display: inline-block; font-family: var(--marker); font-size: 12px; background: var(--yellow); padding: 1px 8px; border-radius: 4px; transform: rotate(-2deg); margin-bottom: 3px; }
+    .addr { font-size: 15px; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+    .meta { font-size: 13px; color: var(--ink-soft); margin: 3px 0 0; }
+    .meta.failed { color: var(--red); }
+    .notes { font-size: 13px; margin: 5px 0 0; font-style: italic; color: var(--ink-soft); overflow-wrap: anywhere; }
+    .actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 124px; }
+    .act {
+      width: 38px; height: 38px; border-radius: 10px; border: 1.5px solid var(--line); background: #fff;
+      cursor: pointer; font-size: 16px; display: grid; place-items: center;
+    }
+    .act:active { transform: scale(.92); }
+    .act.on-visit { background: #d7f5e6; border-color: var(--green); color: var(--green); font-weight: 800; }
+    .act.on-flag { background: #ffe6d4; border-color: var(--orange); }
+    .act.on-target { background: #fff1bf; border-color: #d9a800; }
+
+    .empty { text-align: center; padding: 40px 16px; color: var(--ink-soft); }
+    .empty big { display: block; font-family: var(--marker); font-size: 26px; color: var(--ink); margin-bottom: 6px; transform: rotate(-2deg); }
+
+    /* ---------- Directions ---------- */
+    .steps { counter-reset: s; }
+    .step { display: flex; gap: 12px; padding: 12px; background: var(--paper); border-radius: 10px; margin-bottom: 8px; box-shadow: var(--shadow); }
+    .step-ico { flex: 0 0 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; font-size: 17px; }
+    .step-text { font-size: 16px; font-weight: 600; line-height: 1.35; }
+    .step-dist { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+    .route-sum { font-size: 14px; color: var(--ink-soft); margin: 0 0 10px; }
+
+    /* ---------- Map ---------- */
+    #map { position: absolute; inset: 0; background: var(--kraft-dark); }
+    .map-ctrls { position: absolute; top: 12px; right: 12px; z-index: 1000; display: flex; gap: 6px; }
+    .map-ctrls .btn { flex: 0 0 auto; padding: 7px 10px; font-size: 13px; }
+    .map-ctrls .btn.active { background: var(--ink); color: var(--paper); }
+    .pin {
+      width: 30px; height: 30px; border-radius: 50%; border: 2.5px solid #fff; color: #fff; font: 800 12px var(--body);
+      display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    }
+    .pin.next { width: 38px; height: 38px; font-size: 14px; border-color: var(--yellow); border-width: 4px; }
+    .me { width: 18px; height: 18px; border-radius: 50%; background: var(--blue); border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(58,123,255,.25); }
+    .leaflet-popup-content { font-family: var(--body); }
+
+    /* ---------- Bottom tabs ---------- */
+    .tabs {
+      display: flex; gap: 6px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--paper);
+      border-top: 2px solid var(--ink);
+    }
+    .tab {
+      flex: 1; border: 0; background: transparent; border-radius: 12px; padding: 7px 4px; cursor: pointer;
+      font-size: 12px; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--ink-soft);
+    }
+    .tab .e { font-size: 21px; transition: transform .2s; }
+    .tab.active { background: var(--kraft); color: var(--ink); }
+    .tab.active .e { transform: rotate(-8deg) scale(1.12); }
+
+    /* ---------- Modals & toast ---------- */
+    .modal { display: none; position: fixed; inset: 0; background: rgba(43,33,24,.5); z-index: 2000; align-items: center; justify-content: center; padding: 16px; }
+    .modal.open { display: flex; }
+    .sheet { background: var(--paper); border: 2px solid var(--ink); border-radius: 16px; padding: 18px; width: 100%; max-width: 420px; max-height: 86vh; overflow-y: auto; box-shadow: 0 6px 0 var(--ink); animation: pop .25s cubic-bezier(.2,1.4,.4,1); }
+    .sheet h2 { font-family: var(--marker); font-weight: 400; font-size: 24px; margin: 0 0 10px; }
+    .sheet p, .sheet li { color: var(--ink-soft); font-size: 14px; line-height: 1.5; }
+    .sheet .field { display: block; width: 100%; margin-bottom: 10px; }
+    .sheet label.check { display: flex; gap: 8px; align-items: center; font-size: 15px; margin: 4px 0 8px; }
+    .sheet-btns { display: flex; gap: 8px; margin-top: 12px; }
+    .btn.danger { background: #ffe1dd; color: var(--red); border-color: var(--red); box-shadow: 0 2px 0 var(--red); }
+
+    .toast {
+      position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); opacity: 0;
+      background: var(--ink); color: var(--paper); padding: 10px 14px; border-radius: 12px; z-index: 2500;
+      display: flex; gap: 12px; align-items: center; font-size: 14px; transition: .25s; pointer-events: none; max-width: calc(100% - 32px);
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+    .toast button { background: var(--yellow); color: var(--ink); border: 0; border-radius: 8px; padding: 5px 10px; font-weight: 800; cursor: pointer; }
+
+    .confetti { position: fixed; top: -12px; width: 9px; height: 14px; z-index: 3000; pointer-events: none; animation: fall linear forwards; }
+    @keyframes fall { to { transform: translate(var(--dx), 110vh) rotate(var(--rot)); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .confetti { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <div class="sign-row">
+      <h1 class="sign">Yard Sale <span>Tour!</span></h1>
+      <button class="icon-btn" id="menuBtn" aria-label="Menu" aria-haspopup="true">☰</button>
+    </div>
+    <div class="menu" id="menu" role="menu">
+      <button onclick="openModal('aboutModal')">❓ How it works</button>
+      <button onclick="openDefaultLocation()">🏠 Set default city/state</button>
+      <button onclick="exportList()">📋 Copy list to share</button>
+      <button onclick="resetVisited()">↺ Reset visited marks</button>
+      <button class="danger" onclick="confirmClearAll()">🗑 Clear all sales</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="statStops">0</b><small>Stops</small></div>
+      <div class="stat"><b id="statVisited">0</b><small>Visited</small></div>
+      <div class="stat"><b id="statFlagged">0</b><small>Flagged</small></div>
+      <div class="stat"><b id="statMiles">–</b><small>Route mi</small></div>
+    </div>
+    <div class="haul" title="Tour progress"><div class="haul-fill" id="haulFill"></div></div>
+  </header>
+
+  <main class="content">
+    <section class="view active" id="listView">
+      <div id="nextSlot"></div>
+
+      <div class="add">
+        <input type="text" id="addressInput" placeholder="Add an address…" autocomplete="street-address" enterkeyhint="done" />
+        <button class="btn primary" onclick="addSale()">Add</button>
+      </div>
+      <div class="import-row">
+        <button class="linkish" id="bulkToggle" onclick="toggleBulk()">Paste a whole list at once ▾</button>
+        <button class="linkish" onclick="openModal('importModal')">📂 Import a map</button>
+      </div>
+      <div class="bulk" id="bulk">
+        <p>One address per line — 200+ is fine. If you have coordinates (e.g. from the KML extractor), use <code>Address | lat,lon</code> and they load instantly with no lookup.</p>
+        <textarea id="bulkInput" placeholder="123 Main St, Charleston, SC | 32.7765,-79.9311&#10;456 Oak Ave, Charleston, SC"></textarea>
+        <button class="btn primary" id="bulkAddBtn" onclick="addBulk()">Add all</button>
+      </div>
+
+      <div class="progress" id="progress">
+        <div class="progress-label" id="progressLabel">Locating addresses…</div>
+        <div class="progress-bg"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="chips" id="chips">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="todo">To visit</button>
+          <button class="chip" data-filter="flagged">🚩 Flagged</button>
+          <button class="chip" data-filter="visited">✓ Visited</button>
+        </div>
+        <button class="btn plan-btn" onclick="planRoute(true)" title="Reorder stops into the shortest loop from where you are">✨ Plan route</button>
+      </div>
+
+      <div class="tags" id="salesList"></div>
+    </section>
+
+    <section class="view" id="directionsView">
+      <div id="navSlot"></div>
+      <div id="directionsSteps" class="steps"></div>
+    </section>
+
+    <section class="view" id="mapView">
+      <div id="map"></div>
+      <div class="map-ctrls">
+        <button class="btn" onclick="fitMap()">⤢ Fit</button>
+        <button class="btn active" id="streetBtn" onclick="setMapLayer('street')">Street</button>
+        <button class="btn" id="satelliteBtn" onclick="setMapLayer('satellite')">Satellite</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="list" role="tab"><span class="e">🏷️</span>Stops</button>
+    <button class="tab" data-tab="directions" role="tab"><span class="e">🧭</span>Directions</button>
+    <button class="tab" data-tab="map" role="tab"><span class="e">🗺️</span>Map</button>
+  </nav>
+</div>
+
+<div class="modal" id="editModal">
+  <div class="sheet">
+    <h2>Edit stop</h2>
+    <input class="field" type="text" id="editAddress" placeholder="Address" />
+    <textarea class="field" id="editNotes" placeholder="Notes — what to look for, hours, cash only…"></textarea>
+    <label class="check"><input type="checkbox" id="editFlag" /> 🚩 Flag to come back</label>
+    <div class="sheet-btns">
+      <button class="btn danger" onclick="deleteSale()">Delete</button>
+      <button class="btn" onclick="closeModal('editModal')">Cancel</button>
+      <button class="btn primary" onclick="saveSale()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="defaultLocModal">
+  <div class="sheet">
+    <h2>Home turf</h2>
+    <p>Added to any address that doesn't already have a city or state, so short entries like "123 Main St" can still be found.</p>
+    <input class="field" type="text" id="defaultLocInput" placeholder="e.g. Charleston, SC" />
+    <div class="sheet-btns">
+      <button class="btn" onclick="closeModal('defaultLocModal')">Cancel</button>
+      <button class="btn primary" onclick="saveDefaultLocation()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="confirmModal">
+  <div class="sheet">
+    <h2>Clear everything?</h2>
+    <p>This deletes all <b id="confirmCount">0</b> stops. You can't undo this.</p>
+    <div class="sheet-btns">
+      <button class="btn" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn danger" onclick="clearAll()">Delete all</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="importModal">
+  <div class="sheet">
+    <h2>Import a map</h2>
+    <p><b>Step 1 — from a Google My Maps link</b> (skip if you already have the file). Paste the link and tap Download; your browser saves the map as a <code>.kml</code> file.</p>
+    <input class="field" type="url" id="mapLinkInput" placeholder="https://www.google.com/maps/d/…?mid=…" />
+    <button class="btn" style="width:100%" onclick="downloadKmlFromLink()">⬇️ Download map file</button>
+    <p style="margin-top:16px"><b>Step 2 — pick the file.</b> Works with <code>.kml</code> from Google My Maps / Google Earth, or a <code>.txt</code>/<code>.csv</code> list with one address per line.</p>
+    <label class="drop" id="dropZone">
+      <input type="file" id="fileInput" accept=".kml,.txt,.csv,application/vnd.google-earth.kml+xml,text/plain" hidden />
+      <span>📂 Choose a file<br><small>or drop it here</small></span>
+    </label>
+    <div class="sheet-btns"><button class="btn" onclick="closeModal('importModal')">Close</button></div>
+  </div>
+</div>
+
+<div class="modal" id="aboutModal">
+  <div class="sheet">
+    <h2>How it works</h2>
+    <ol>
+      <li><b>Add stops</b> one at a time or paste a whole list.</li>
+      <li>Tap <b>✨ Plan route</b> to order them into the shortest trip from where you are.</li>
+      <li>Hit <b>Go</b> to open your maps app, or use the Directions tab.</li>
+      <li>Tap <b>Arrived</b> at each sale. 🚩 anything worth a second look.</li>
+    </ol>
+    <p>Everything is saved on this device only. Use "Copy list to share" to send your list to someone else — they can paste it right in.</p>
+    <div class="sheet-btns"><button class="btn primary" onclick="closeModal('aboutModal')">Got it</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastAction" hidden></button></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ---------- State (localStorage keys are unchanged from v1 so existing lists carry over) ----------
+const KEY = 'yardSales', KEY_NEXT = 'yardSaleNextTarget', KEY_DEF = 'yardSaleDefaultLocation';
+
+function load(key, fallback) {
+  try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch { return fallback; }
+}
+function store(key, val) {
+  try { val === null ? localStorage.removeItem(key) : localStorage.setItem(key, val); } catch {}
+}
+
+let sales = [];
+try { sales = JSON.parse(load(KEY, '[]')) || []; } catch { sales = []; }
+let userLoc = null;
+let editId = null;
+let nextTargetId = load(KEY_NEXT, null);
+let filter = 'all';
+let map = null, streetLayer = null, satelliteLayer = null, markerLayer = null, meMarker = null, mapFitted = false;
+let geocodeRunning = false, geocodeEpoch = 0;
+
+const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const byId = id => sales.find(s => s.id === id);
+const hasLoc = s => typeof s.lat === 'number' && typeof s.lon === 'number';
+const $ = id => document.getElementById(id);
+
+sales.forEach(s => { if (!s.id) s.id = genId(); });
+
+const esc = str => String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function persist() { store(KEY, JSON.stringify(sales)); }
+function refresh() { persist(); renderList(); renderNav(); renderStats(); renderMap(); }
+
+// ---------- Geometry ----------
+const toRad = d => d * Math.PI / 180;
+function km(a, b) {
+  const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(h));
+}
+function fmtKm(k) {
+  const mi = k * 0.621371;
+  return mi < 0.1 ? Math.round(mi * 5280 / 10) * 10 + ' ft' : mi.toFixed(1) + ' mi';
+}
+
+// ---------- Route planning: nearest neighbour, then 2-opt ----------
+function orderedStops() {
+  // Unvisited stops in planned order; unplanned ones keep insertion order after planned ones.
+  return sales.filter(s => !s.visited)
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => (a.s.order ?? 1e9) - (b.s.order ?? 1e9) || a.i - b.i)
+    .map(x => x.s);
+}
+
+function planRoute(announce) {
+  const pts = sales.filter(s => !s.visited && hasLoc(s));
+  if (pts.length < 2) { if (announce) toast('Add at least two located stops to plan a route'); return; }
+  const start = userLoc || null;
+
+  // Nearest neighbour from the user's position (or from the first stop if location is off)
+  const left = pts.slice();
+  const path = [];
+  let cur = start || left.shift();
+  if (!start) path.push(cur);
+  while (left.length) {
+    let best = 0, bestD = Infinity;
+    left.forEach((p, i) => { const d = km(cur, p); if (d < bestD) { bestD = d; best = i; } });
+    cur = left.splice(best, 1)[0];
+    path.push(cur);
+  }
+
+  // 2-opt on an open path with a fixed start
+  const full = start ? [start, ...path] : path;
+  const first = start ? 1 : 1; // never move index 0
+  let improved = true, passes = 0;
+  while (improved && passes++ < 50) {
+    improved = false;
+    for (let i = first; i < full.length - 1; i++) {
+      for (let j = i + 1; j < full.length; j++) {
+        const a = full[i - 1], b = full[i], c = full[j], d = full[j + 1];
+        const before = km(a, b) + (d ? km(c, d) : 0);
+        const after = km(a, c) + (d ? km(b, d) : 0);
+        if (after < before - 1e-9) {
+          full.splice(i, j - i + 1, ...full.slice(i, j + 1).reverse());
+          improved = true;
+        }
+      }
+    }
+  }
+  const ordered = start ? full.slice(1) : full;
+  ordered.forEach((s, i) => { s.order = i; });
+  sales.filter(s => !s.visited && !hasLoc(s)).forEach(s => { s.order = undefined; });
+  nextTargetId = null; store(KEY_NEXT, null);
+  refresh();
+  if (announce) toast(`✨ Route planned — ${ordered.length} stops, about ${fmtKm(routeKm())}`);
+}
+
+function routeKm() {
+  const stops = orderedStops().filter(hasLoc);
+  let total = 0, prev = userLoc;
+  stops.forEach(s => { if (prev) total += km(prev, s); prev = s; });
+  return total;
+}
+
+function getNextSale() {
+  if (nextTargetId) {
+    const t = byId(nextTargetId);
+    if (t && !t.visited) return t;
+    nextTargetId = null; store(KEY_NEXT, null);
+  }
+  const stops = orderedStops();
+  return stops.find(hasLoc) || stops[0] || null;
+}
+
+// ---------- Adding ----------
+function getDefaultLocation() { return load(KEY_DEF, ''); }
+function applyDefaultLocation(addr) {
+  const def = getDefaultLocation();
+  if (!def) return addr;
+  // Only append when the address looks bare: no comma (no city part) and doesn't already mention it.
+  if (addr.includes(',') || addr.toLowerCase().includes(def.toLowerCase())) return addr;
+  return addr + ', ' + def;
+}
+
+function parseLine(line) {
+  const m = line.match(/^(.*)\|\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (m && m[1].trim()) {
+    const lat = parseFloat(m[2]), lon = parseFloat(m[3]);
+    if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return { address: m[1].trim(), lat, lon };
+  }
+  return { address: line.trim(), lat: null, lon: null };
+}
+
+const norm = a => a.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+function pushLines(lines) {
+  const seen = new Set(sales.map(s => norm(s.address)));
+  let added = 0, dupes = 0;
+  lines.forEach(line => {
+    const p = parseLine(line);
+    const address = p.lat === null ? applyDefaultLocation(p.address) : p.address;
+    const key = norm(address);
+    if (!key) return;
+    if (seen.has(key)) { dupes++; return; }
+    seen.add(key);
+    const located = p.lat !== null;
+    sales.push({ id: genId(), address, lat: p.lat, lon: p.lon, visited: false, flagged: false, notes: '',
+                 geocodeAttempted: located, geocodeError: null });
+    added++;
+  });
+  return { added, dupes };
+}
+
+function addSale() {
+  const input = $('addressInput');
+  if (!input.value.trim()) return;
+  const { added, dupes } = pushLines([input.value]);
+  input.value = '';
+  if (dupes && !added) toast('That address is already on your list');
+  refresh();
+  geocode();
+}
+
+function toggleBulk() {
+  const open = $('bulk').classList.toggle('open');
+  $('bulkToggle').textContent = open ? 'Paste a whole list at once ▴' : 'Paste a whole list at once ▾';
+}
+
+function addBulk() {
+  const lines = $('bulkInput').value.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return;
+  const { added, dupes } = pushLines(lines);
+  $('bulkInput').value = '';
+  if ($('bulk').classList.contains('open')) toggleBulk();
+  toast(`Added ${added} stop${added === 1 ? '' : 's'}` + (dupes ? ` · skipped ${dupes} duplicate${dupes === 1 ? '' : 's'}` : ''));
+  refresh();
+  geocode();
+}
+
+// ---------- File import (KML or plain text) ----------
+function kmlToLines(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('That file isn\'t valid KML');
+  const lines = [];
+  doc.querySelectorAll('Placemark').forEach(pm => {
+    const coords = pm.querySelector('Point > coordinates');
+    if (!coords) return; // skip lines/shapes
+    const [lon, lat] = coords.textContent.trim().split(',').map(Number);
+    const name = (pm.querySelector('address')?.textContent || pm.querySelector('name')?.textContent || '').trim().replace(/\s+/g, ' ');
+    if (!isNaN(lat) && !isNaN(lon)) lines.push(`${name || `Pin at ${lat.toFixed(5)}, ${lon.toFixed(5)}`} | ${lat},${lon}`);
+  });
+  return lines;
+}
+
+async function importFile(file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const isKml = /\.kml$/i.test(file.name) || /<kml[\s>]/i.test(text.slice(0, 500));
+    if (/\.kmz$/i.test(file.name)) throw new Error('KMZ is zipped — re-download with "Export to .KML" checked');
+    const lines = isKml ? kmlToLines(text) : text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) throw new Error('No pins or addresses found in that file');
+    const { added, dupes } = pushLines(lines);
+    closeModal('importModal');
+    switchTab('list');
+    toast(`📂 Imported ${added} stop${added === 1 ? '' : 's'}` + (dupes ? ` · skipped ${dupes} duplicate${dupes === 1 ? '' : 's'}` : ''));
+    refresh();
+    if (added && !geocodeRunning) planRoute(false);
+    geocode();
+  } catch (e) {
+    toast('⚠️ ' + e.message);
+  } finally {
+    $('fileInput').value = '';
+  }
+}
+
+function downloadKmlFromLink() {
+  // Google doesn't let a web page read the KML directly (CORS), so we hand the download to the browser.
+  const m = $('mapLinkInput').value.match(/[?&]mid=([\w-]+)/);
+  if (!m) return toast('That doesn\'t look like a My Maps link (needs "mid=")');
+  window.open(`https://www.google.com/maps/d/kml?mid=${m[1]}&forcekml=1`, '_blank', 'noopener');
+  toast('Downloading… then choose that file in step 2');
+}
+
+$('fileInput').addEventListener('change', e => importFile(e.target.files[0]));
+const dz = $('dropZone');
+['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+dz.addEventListener('drop', e => importFile(e.dataTransfer.files[0]));
+
+// ---------- Geocoding (by id, so deletes/clears mid-run are safe) ----------
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function geocode() {
+  if (geocodeRunning) return;
+  geocodeRunning = true;
+  const epoch = geocodeEpoch;
+  let done = 0, found = 0, failed = 0;
+  $('progress').classList.add('open');
+
+  while (true) {
+    if (epoch !== geocodeEpoch) break;
+    const queue = sales.filter(s => !hasLoc(s) && !s.geocodeAttempted);
+    if (!queue.length) break;
+    const s = queue[0];
+    const total = done + queue.length;
+    $('progressLabel').textContent = `📍 Finding addresses… ${done + 1} of ${total}`;
+    $('progressFill').style.width = Math.round(done / total * 100) + '%';
+    let lat = null, lon = null, err = null;
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(s.address)}&format=json&limit=1&countrycodes=us`);
+      if (!res.ok) err = `Lookup server error (${res.status})`;
+      else {
+        const data = await res.json();
+        if (data.length) { lat = parseFloat(data[0].lat); lon = parseFloat(data[0].lon); }
+        else err = 'No match found';
+      }
+    } catch (e) { err = 'Network error'; }
+    const live = byId(s.id); // may have been deleted or edited while we waited
+    if (live && live.address === s.address && epoch === geocodeEpoch) {
+      live.lat = lat; live.lon = lon; live.geocodeError = err; live.geocodeAttempted = true;
+      err ? failed++ : found++;
+      persist(); renderList(); renderStats();
+    }
+    done++;
+    await sleep(1100); // Nominatim usage policy: max 1 request/second
+  }
+
+  geocodeRunning = false;
+  if (epoch !== geocodeEpoch || !done) { $('progress').classList.remove('open'); return; }
+  $('progressFill').style.width = '100%';
+  $('progressLabel').textContent = failed
+    ? `Found ${found}, couldn't find ${failed} — tap ↻ after fixing the address`
+    : `Found all ${found} address${found === 1 ? '' : 'es'} 🎉`;
+  setTimeout(() => $('progress').classList.remove('open'), failed ? 5000 : 1800);
+  if (found) refresh();
+  // Auto-plan the first time a list becomes routable
+  if (found && !sales.some(s => typeof s.order === 'number')) planRoute(false);
+}
+
+function retryGeocode(id) {
+  const s = byId(id);
+  if (!s) return;
+  s.geocodeAttempted = false; s.geocodeError = null;
+  refresh(); geocode();
+}
+
+// ---------- List ----------
+function renderList() {
+  const list = $('salesList');
+  if (!sales.length) {
+    list.innerHTML = '<div class="empty"><big>Nothing on the tables yet!</big>Add an address above, or paste a whole list.</div>';
+    return;
+  }
+  const next = getNextSale();
+  const route = orderedStops();
+  const rank = new Map(route.map((s, i) => [s.id, i + 1]));
+  let items = [...route, ...sales.filter(s => s.visited)];
+  if (filter === 'todo') items = items.filter(s => !s.visited);
+  if (filter === 'flagged') items = items.filter(s => s.flagged);
+  if (filter === 'visited') items = items.filter(s => s.visited);
+  if (!items.length) {
+    list.innerHTML = `<div class="empty"><big>${filter === 'visited' ? 'No stops yet' : 'Nothing here'}</big>Try another filter.</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map((s, n) => {
+    const isNext = next && s.id === next.id;
+    const failed = s.geocodeAttempted && !hasLoc(s);
+    let meta, metaCls = 'meta';
+    if (hasLoc(s)) meta = userLoc ? fmtKm(km(userLoc, s)) + ' away' : 'On the map';
+    else if (failed) { meta = esc(s.geocodeError || 'Not found') + ' — edit the address, then ↻'; metaCls += ' failed'; }
+    else meta = 'Finding on map…';
+    const dotCls = s.visited ? 'visited' : failed ? 'failed' : !hasLoc(s) ? 'pending' : s.flagged ? 'flagged' : '';
+    const dotTxt = s.visited ? '✓' : failed ? '!' : !hasLoc(s) ? '…' : rank.get(s.id);
+    return `
+      <article class="tag${isNext ? ' is-next' : ''}${s.visited ? ' visited' : ''}" style="animation-delay:${Math.min(n, 12) * 25}ms">
+        <div class="dot ${dotCls}">${dotTxt}</div>
+        <div class="tag-body">
+          ${isNext ? '<span class="badge">next stop</span>' : ''}
+          <p class="addr">${esc(s.address)}</p>
+          <p class="${metaCls}">${meta}${s.flagged ? ' · 🚩' : ''}</p>
+          ${s.notes ? `<p class="notes">“${esc(s.notes)}”</p>` : ''}
+        </div>
+        <div class="actions">
+          ${failed ? `<button class="act" onclick="retryGeocode('${s.id}')" title="Try finding it again">↻</button>` : ''}
+          ${!s.visited && hasLoc(s) ? `<button class="act ${isNext ? 'on-target' : ''}" onclick="setAsNext('${s.id}')" title="Go here next">🧭</button>` : ''}
+          ${hasLoc(s) ? `<button class="act" onclick="focusOnSale('${s.id}')" title="Show on map">📍</button>` : ''}
+          <button class="act ${s.visited ? 'on-visit' : ''}" onclick="toggleVisited('${s.id}')" title="${s.visited ? 'Mark not visited' : 'Mark visited'}">${s.visited ? '✓' : '○'}</button>
+          <button class="act ${s.flagged ? 'on-flag' : ''}" onclick="toggleFlag('${s.id}')" title="${s.flagged ? 'Unflag' : 'Flag to come back'}">🚩</button>
+          <button class="act" onclick="openEdit('${s.id}')" title="Edit">✎</button>
+        </div>
+      </article>`;
+  }).join('');
+}
+
+function renderStats() {
+  const visited = sales.filter(s => s.visited).length;
+  $('statStops').textContent = sales.length;
+  $('statVisited').textContent = visited;
+  $('statFlagged').textContent = sales.filter(s => s.flagged).length;
+  const rk = routeKm();
+  $('statMiles').textContent = rk ? (rk * 0.621371).toFixed(1) : '–';
+  $('haulFill').style.width = sales.length ? (visited / sales.length * 100) + '%' : '0';
+}
+
+function toggleVisited(id) {
+  const s = byId(id); if (!s) return;
+  s.visited = !s.visited;
+  if (s.visited) celebrate(s);
+  refresh();
+}
+function toggleFlag(id) { const s = byId(id); if (s) { s.flagged = !s.flagged; refresh(); } }
+
+function setAsNext(id) {
+  nextTargetId = id; store(KEY_NEXT, id);
+  refresh();
+  toast('🧭 Heading there next');
+}
+
+function resetVisited() {
+  closeMenu();
+  sales.forEach(s => { s.visited = false; });
+  refresh();
+  toast('All stops marked unvisited');
+}
+
+// ---------- Next-stop banner (shared by Stops and Directions tabs) ----------
+function mapsUrl(dest, waypoints = []) {
+  const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document;
+  if (isApple && !waypoints.length) return `https://maps.apple.com/?daddr=${dest.lat},${dest.lon}&dirflg=d`;
+  let url = `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}&travelmode=driving`;
+  if (waypoints.length) url += '&waypoints=' + waypoints.map(w => `${w.lat},${w.lon}`).join('%7C');
+  return url;
+}
+
+function nextBannerHtml() {
+  if (!sales.length) return '';
+  const next = getNextSale();
+  if (!next) {
+    return `<div class="next done"><div class="next-label">Tour complete! 🎉</div><div class="next-meta" style="color:#fff">You hit all ${sales.length} stops. Enjoy the haul.</div></div>`;
+  }
+  const dist = userLoc && hasLoc(next) ? fmtKm(km(userLoc, next)) + ' away' : hasLoc(next) ? 'Turn on location for distance' : 'Still finding this one on the map…';
+  const remaining = orderedStops().filter(hasLoc);
+  return `
+    <div class="next">
+      <div class="next-label">Next stop →</div>
+      <div class="next-addr">${esc(next.address)}</div>
+      <div class="next-meta">${dist}${next.notes ? ' · ' + esc(next.notes) : ''}</div>
+      <div class="next-actions">
+        ${hasLoc(next) ? `<a class="btn go" style="text-align:center;text-decoration:none" href="${mapsUrl(next)}" target="_blank" rel="noopener">🚗 Go</a>` : ''}
+        <button class="btn" onclick="markNextVisited()">🛍️ Arrived</button>
+        <button class="btn" onclick="skipNext()" title="Move this stop to the end">⏭ Skip</button>
+      </div>
+      ${remaining.length > 2 ? `<div class="next-actions"><a class="linkish" href="${mapsUrl(remaining[Math.min(9, remaining.length - 1)], remaining.slice(0, Math.min(9, remaining.length - 1)))}" target="_blank" rel="noopener">Open the next ${Math.min(10, remaining.length)} stops as one trip in Google Maps ↗</a></div>` : ''}
+    </div>`;
+}
+
+function renderNav() {
+  const html = nextBannerHtml();
+  $('nextSlot').innerHTML = html;
+  $('navSlot').innerHTML = html;
+}
+
+function markNextVisited() {
+  const next = getNextSale();
+  if (!next) return;
+  next.visited = true;
+  celebrate(next);
+  refresh();
+  if ($('directionsView').classList.contains('active')) showDirections();
+}
+
+function skipNext() {
+  const next = getNextSale();
+  if (!next) return;
+  const max = Math.max(0, ...sales.map(s => s.order ?? 0));
+  next.order = max + 1;
+  if (nextTargetId === next.id) { nextTargetId = null; store(KEY_NEXT, null); }
+  refresh();
+  toast('Moved to the end of the route');
+  if ($('directionsView').classList.contains('active')) showDirections();
+}
+
+// ---------- Directions ----------
+const ICONS = { left: '↰', 'slight left': '↖', 'sharp left': '↰', right: '↱', 'slight right': '↗', 'sharp right': '↱', straight: '↑', uturn: '↶' };
+
+function buildInstruction(step) {
+  const { type, modifier, exit } = step.maneuver;
+  const name = step.name && step.name.trim();
+  const onto = name ? ' onto ' + name : '', along = name ? ' on ' + name : '';
+  const words = { uturn: 'Make a U-turn', 'sharp right': 'Turn sharp right', right: 'Turn right', 'slight right': 'Keep slightly right',
+                  straight: 'Continue straight', 'slight left': 'Keep slightly left', left: 'Turn left', 'sharp left': 'Turn sharp left' };
+  switch (type) {
+    case 'depart': return 'Head out' + along;
+    case 'arrive': return 'Arrive — the sale is ' + (modifier && modifier !== 'straight' ? 'on your ' + modifier : 'ahead') + ' 🛍️';
+    case 'turn': case 'end of road': return (words[modifier] || 'Turn') + onto;
+    case 'merge': return 'Merge' + onto;
+    case 'on ramp': return 'Take the ramp' + onto;
+    case 'off ramp': return 'Take the exit' + onto;
+    case 'fork': return 'Keep ' + (modifier || 'straight') + ' at the fork' + onto;
+    case 'roundabout': case 'rotary': case 'roundabout turn': return 'At the roundabout, take exit ' + (exit || '') + onto;
+    default: return (words[modifier] || 'Continue') + (type === 'new name' || type === 'continue' ? onto : along);
+  }
+}
+
+async function showDirections() {
+  const box = $('directionsSteps');
+  const next = getNextSale();
+  if (!next) { box.innerHTML = ''; return; }
+  if (!hasLoc(next)) { box.innerHTML = '<div class="empty"><big>Hang on…</big>Still finding this address on the map.</div>'; return; }
+  if (!userLoc) {
+    box.innerHTML = `<div class="empty"><big>Where are you?</big>Turn-by-turn needs your location.<br><br>
+      <button class="btn primary" onclick="startLocation(true)">📍 Use my location</button></div>`;
+    return;
+  }
+  box.innerHTML = '<div class="empty">Plotting the way…</div>';
+  const target = next.id;
+  try {
+    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${userLoc.lon},${userLoc.lat};${next.lon},${next.lat}?steps=true&overview=false`);
+    const data = await res.json();
+    if (getNextSale()?.id !== target) return; // user moved on while we waited
+    if (!data.routes || !data.routes.length) throw new Error('no route');
+    const r = data.routes[0];
+    const steps = r.legs.flatMap(l => l.steps);
+    box.innerHTML = `<p class="route-sum">${fmtKm(r.distance / 1000)} · about ${Math.max(1, Math.round(r.duration / 60))} min</p>` +
+      steps.map(st => `
+        <div class="step">
+          <div class="step-ico">${st.maneuver.type === 'arrive' ? '🏁' : st.maneuver.type === 'depart' ? '🚗' : ICONS[st.maneuver.modifier] || '↑'}</div>
+          <div><div class="step-text">${esc(buildInstruction(st))}</div>${st.distance ? `<div class="step-dist">${fmtKm(st.distance / 1000)}</div>` : ''}</div>
+        </div>`).join('');
+  } catch {
+    box.innerHTML = `<div class="empty"><big>No route found</big>The free routing server may be busy. Try the 🚗 Go button to use your maps app.</div>`;
+  }
+}
+
+// ---------- Map ----------
+function initMap() {
+  if (map) return;
+  map = L.map('map', { zoomControl: true }).setView([39.83, -98.58], 4);
+  streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
+  satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri World Imagery', maxZoom: 19 });
+  markerLayer = L.layerGroup().addTo(map);
+}
+
+function renderMap() {
+  if (!map) return;
+  markerLayer.clearLayers();
+  const next = getNextSale();
+  const route = orderedStops().filter(hasLoc);
+  const rank = new Map(route.map((s, i) => [s.id, i + 1]));
+
+  const line = (userLoc ? [userLoc] : []).concat(route).map(p => [p.lat, p.lon]);
+  if (line.length > 1) L.polyline(line, { color: '#2b2118', weight: 3, dashArray: '6 8', opacity: .6 }).addTo(markerLayer);
+
+  sales.filter(hasLoc).forEach(s => {
+    const color = s.visited ? '#1e8a5a' : s.flagged ? '#c45a12' : '#2a5fd4';
+    const isNext = next && next.id === s.id;
+    const icon = L.divIcon({
+      className: '', iconSize: isNext ? [38, 38] : [30, 30],
+      html: `<div class="pin${isNext ? ' next' : ''}" style="background:${color}">${s.visited ? '✓' : rank.get(s.id) || ''}</div>`
+    });
+    L.marker([s.lat, s.lon], { icon, zIndexOffset: isNext ? 1000 : s.visited ? -100 : 0 })
+      .bindPopup(`<strong>${esc(s.address)}</strong>${s.notes ? '<br>' + esc(s.notes) : ''}<br>
+        <a href="${mapsUrl(s)}" target="_blank" rel="noopener">Directions ↗</a>`)
+      .addTo(markerLayer);
+  });
+
+  if (userLoc) {
+    if (!meMarker) meMarker = L.marker([userLoc.lat, userLoc.lon], { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18] }), zIndexOffset: 2000 }).addTo(map);
+    else meMarker.setLatLng([userLoc.lat, userLoc.lon]);
+  }
+  if (!mapFitted) fitMap();
+}
+
+function fitMap() {
+  if (!map) return;
+  const pts = sales.filter(hasLoc).map(s => [s.lat, s.lon]);
+  if (userLoc) pts.push([userLoc.lat, userLoc.lon]);
+  if (pts.length) { map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 17 }); mapFitted = true; }
+}
+
+function setMapLayer(which) {
+  if (!map) return;
+  const sat = which === 'satellite';
+  map.removeLayer(sat ? streetLayer : satelliteLayer);
+  (sat ? satelliteLayer : streetLayer).addTo(map);
+  $('satelliteBtn').classList.toggle('active', sat);
+  $('streetBtn').classList.toggle('active', !sat);
+}
+
+function focusOnSale(id) {
+  const s = byId(id);
+  if (!s || !hasLoc(s)) return;
+  switchTab('map');
+  setTimeout(() => {
+    map.invalidateSize();
+    map.setView([s.lat, s.lon], 18);
+    markerLayer.eachLayer(l => { if (l.getLatLng && l.getLatLng().lat === s.lat && l.getLatLng().lng === s.lon) l.openPopup(); });
+  }, 60);
+}
+
+// ---------- Tabs ----------
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === tab + 'View'));
+  if (tab === 'map') { initMap(); renderMap(); setTimeout(() => map.invalidateSize(), 60); }
+  if (tab === 'directions') showDirections();
+}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+$('chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  filter = c.dataset.filter;
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c));
+  renderList();
+});
+
+// ---------- Edit / delete with undo ----------
+function openEdit(id) {
+  const s = byId(id); if (!s) return;
+  editId = id;
+  $('editAddress').value = s.address;
+  $('editNotes').value = s.notes || '';
+  $('editFlag').checked = !!s.flagged;
+  openModal('editModal');
+}
+
+function saveSale() {
+  const s = byId(editId); if (!s) return closeModal('editModal');
+  const addr = $('editAddress').value.trim();
+  if (addr && addr !== s.address) {
+    s.address = addr; s.lat = null; s.lon = null; s.geocodeAttempted = false; s.geocodeError = null; s.order = undefined;
+  }
+  s.notes = $('editNotes').value.trim();
+  s.flagged = $('editFlag').checked;
+  closeModal('editModal');
+  refresh(); geocode();
+}
+
+function deleteSale() {
+  const idx = sales.findIndex(s => s.id === editId);
+  if (idx < 0) return;
+  const [removed] = sales.splice(idx, 1);
+  closeModal('editModal');
+  refresh();
+  toast('Stop deleted', 'Undo', () => { sales.splice(idx, 0, removed); refresh(); });
+}
+
+function confirmClearAll() { closeMenu(); $('confirmCount').textContent = sales.length; openModal('confirmModal'); }
+function clearAll() {
+  geocodeEpoch++; // stops any lookup in flight from writing back
+  sales = []; nextTargetId = null; store(KEY_NEXT, null); mapFitted = false;
+  closeModal('confirmModal');
+  refresh();
+}
+
+// ---------- Menu, modals, settings ----------
+$('menuBtn').addEventListener('click', e => { e.stopPropagation(); $('menu').classList.toggle('open'); });
+document.addEventListener('click', e => { if (!e.target.closest('#menu')) closeMenu(); });
+function closeMenu() { $('menu').classList.remove('open'); }
+function openModal(id) { closeMenu(); $(id).classList.add('open'); const f = $(id).querySelector('input, textarea'); f && f.focus(); }
+function closeModal(id) { $(id).classList.remove('open'); if (id === 'editModal') editId = null; }
+document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) closeModal(m.id); }));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { document.querySelectorAll('.modal.open').forEach(m => closeModal(m.id)); closeMenu(); }
+});
+$('addressInput').addEventListener('keydown', e => { if (e.key === 'Enter') addSale(); });
+
+function openDefaultLocation() { $('defaultLocInput').value = getDefaultLocation(); openModal('defaultLocModal'); }
+function saveDefaultLocation() { store(KEY_DEF, $('defaultLocInput').value.trim()); closeModal('defaultLocModal'); toast('Saved'); }
+
+async function exportList() {
+  closeMenu();
+  if (!sales.length) return toast('Nothing to copy yet');
+  const text = sales.map(s => hasLoc(s) ? `${s.address} | ${s.lat.toFixed(6)},${s.lon.toFixed(6)}` : s.address).join('\n');
+  try { await navigator.clipboard.writeText(text); toast(`📋 Copied ${sales.length} stops — paste into anyone's copy`); }
+  catch { $('bulkInput').value = text; if (!$('bulk').classList.contains('open')) toggleBulk(); switchTab('list'); toast('Copy the text from the paste box'); }
+}
+
+// ---------- Toast & confetti ----------
+let toastTimer;
+function toast(msg, actionLabel, action) {
+  const t = $('toast'), btn = $('toastAction');
+  $('toastMsg').textContent = msg;
+  btn.hidden = !actionLabel;
+  if (actionLabel) { btn.textContent = actionLabel; btn.onclick = () => { action(); t.classList.remove('show'); }; }
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), actionLabel ? 5000 : 2600);
+}
+
+const CHEERS = ['Nice haul! 🛍️', 'Treasure hunted! 💎', 'One man\'s trash… 🗝️', 'Bargain secured! 💸', 'On to the next! 🚗'];
+function celebrate(s) {
+  const left = sales.filter(x => !x.visited).length;
+  toast(left ? `${CHEERS[Math.floor(Math.random() * CHEERS.length)]} ${left} to go` : 'That\'s every stop! 🎉',
+        'Undo', () => { s.visited = false; refresh(); });
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const colors = ['#ff5d8f', '#ffcf3f', '#1e8a5a', '#2a5fd4', '#c45a12'];
+  for (let i = 0; i < (left ? 40 : 120); i++) {
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw';
+    c.style.background = colors[i % colors.length];
+    c.style.borderRadius = i % 3 ? '2px' : '50%';
+    c.style.setProperty('--dx', (Math.random() * 160 - 80) + 'px');
+    c.style.setProperty('--rot', (Math.random() * 900 - 450) + 'deg');
+    c.style.animationDuration = 1.4 + Math.random() * 1.4 + 's';
+    c.style.animationDelay = Math.random() * .25 + 's';
+    document.body.appendChild(c);
+    c.addEventListener('animationend', () => c.remove());
+  }
+}
+
+// ---------- Location (watches while you drive) ----------
+let watching = false, lastRenderLoc = null;
+function startLocation(userAsked) {
+  if (!navigator.geolocation || watching) return;
+  watching = true;
+  navigator.geolocation.watchPosition(pos => {
+    const first = !userLoc;
+    userLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    // Re-render at most every ~50 m of movement to keep it cheap
+    if (first || !lastRenderLoc || km(lastRenderLoc, userLoc) > 0.05) {
+      lastRenderLoc = userLoc;
+      renderList(); renderNav(); renderStats(); renderMap();
+      if (first && $('directionsView').classList.contains('active')) showDirections();
+    }
+  }, err => {
+    watching = false;
+    if (userAsked) toast('Location is blocked — allow it in your browser settings');
+  }, { enableHighAccuracy: true, maximumAge: 15000 });
+}
+
+// ---------- Boot ----------
+persist();
+renderList(); renderNav(); renderStats();
+startLocation(false);
+geocode();
+</script>
+</body>
+</html>
