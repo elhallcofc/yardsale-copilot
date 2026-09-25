@@ -19,7 +19,7 @@
       --line: #d9c4a0;
       --pink: #d62a66;
       --yellow: #ffcf3f;
-      --green: #1e8a5a;
+      --green: #187a4e;
       --blue: #2a5fd4;
       --orange: #c45a12;
       --red: #a8241b;
@@ -337,6 +337,7 @@
     <input class="field" type="text" id="editAddress" placeholder="Address" />
     <textarea class="field" id="editNotes" placeholder="Notes — what to look for, hours, cash only…"></textarea>
     <label class="check"><input type="checkbox" id="editFlag" /> 🚩 Flag to come back</label>
+    <button class="btn go" id="startHereBtn" style="width:100%" onclick="startRouteAt(editId)">▶ Start my route here</button>
     <div class="sheet-btns">
       <button class="btn danger" onclick="deleteSale()">Delete</button>
       <button class="btn" onclick="closeModal('editModal')">Cancel</button>
@@ -454,16 +455,23 @@ function orderedStops() {
     .map(x => x.s);
 }
 
-function planRoute(announce) {
+// startId: a stop the user picked as stop #1. Otherwise start from their location,
+// or (location off) from whichever stop is nearest the others' western edge.
+function planRoute(announce, startId) {
   const pts = sales.filter(s => !s.visited && hasLoc(s));
   if (pts.length < 2) { if (announce) toast('Add at least two located stops to plan a route'); return; }
-  const start = userLoc || null;
+  const pinned = startId ? pts.find(s => s.id === startId) : null;
+  const start = pinned ? null : userLoc || null;
 
-  // Nearest neighbour from the user's position (or from the first stop if location is off)
+  // Nearest neighbour from the chosen stop, the user's position, or a fallback stop
   const left = pts.slice();
   const path = [];
-  let cur = start || left.shift();
-  if (!start) path.push(cur);
+  let cur = start;
+  if (!start) {
+    const firstStop = pinned || left.reduce((a, b) => (b.lon < a.lon ? b : a));
+    left.splice(left.indexOf(firstStop), 1);
+    path.push(cur = firstStop);
+  }
   while (left.length) {
     let best = 0, bestD = Infinity;
     left.forEach((p, i) => { const d = km(cur, p); if (d < bestD) { bestD = d; best = i; } });
@@ -473,11 +481,10 @@ function planRoute(announce) {
 
   // 2-opt on an open path with a fixed start
   const full = start ? [start, ...path] : path;
-  const first = start ? 1 : 1; // never move index 0
   let improved = true, passes = 0;
   while (improved && passes++ < 50) {
     improved = false;
-    for (let i = first; i < full.length - 1; i++) {
+    for (let i = 1; i < full.length - 1; i++) { // index 0 is the fixed start
       for (let j = i + 1; j < full.length; j++) {
         const a = full[i - 1], b = full[i], c = full[j], d = full[j + 1];
         const before = km(a, b) + (d ? km(c, d) : 0);
@@ -494,7 +501,9 @@ function planRoute(announce) {
   sales.filter(s => !s.visited && !hasLoc(s)).forEach(s => { s.order = undefined; });
   nextTargetId = null; store(KEY_NEXT, null);
   refresh();
-  if (announce) toast(`✨ Route planned — ${ordered.length} stops, about ${fmtKm(routeKm())}`);
+  if (announce) toast(pinned
+    ? `▶ Starting at ${pinned.address} — ${ordered.length} stops reordered`
+    : `✨ Route planned — ${ordered.length} stops, about ${fmtKm(routeKm())}`);
 }
 
 function routeKm() {
@@ -897,7 +906,7 @@ function renderMap() {
   if (line.length > 1) L.polyline(line, { color: '#2b2118', weight: 3, dashArray: '6 8', opacity: .6 }).addTo(markerLayer);
 
   sales.filter(hasLoc).forEach(s => {
-    const color = s.visited ? '#1e8a5a' : s.flagged ? '#c45a12' : '#2a5fd4';
+    const color = s.visited ? '#187a4e' : s.flagged ? '#c45a12' : '#2a5fd4';
     const isNext = next && next.id === s.id;
     const icon = L.divIcon({
       className: '', iconSize: isNext ? [38, 38] : [30, 30],
@@ -905,7 +914,8 @@ function renderMap() {
     });
     L.marker([s.lat, s.lon], { icon, zIndexOffset: isNext ? 1000 : s.visited ? -100 : 0 })
       .bindPopup(`<strong>${esc(s.address)}</strong>${s.notes ? '<br>' + esc(s.notes) : ''}<br>
-        <a href="${mapsUrl(s)}" target="_blank" rel="noopener">Directions ↗</a>`)
+        <a href="${mapsUrl(s)}" target="_blank" rel="noopener">Directions ↗</a>
+        ${s.visited ? '' : ` · <a href="#" onclick="startRouteAt('${s.id}'); return false;">▶ Start here</a>`}`)
       .addTo(markerLayer);
   });
 
@@ -960,12 +970,21 @@ $('chips').addEventListener('click', e => {
 });
 
 // ---------- Edit / delete with undo ----------
+function startRouteAt(id) {
+  const s = byId(id);
+  if (!s || s.visited || !hasLoc(s)) return;
+  closeModal('editModal');
+  if (map) map.closePopup();
+  planRoute(true, id);
+}
+
 function openEdit(id) {
   const s = byId(id); if (!s) return;
   editId = id;
   $('editAddress').value = s.address;
   $('editNotes').value = s.notes || '';
   $('editFlag').checked = !!s.flagged;
+  $('startHereBtn').hidden = s.visited || !hasLoc(s);
   openModal('editModal');
 }
 
@@ -1039,7 +1058,7 @@ function celebrate(s) {
   toast(left ? `${CHEERS[Math.floor(Math.random() * CHEERS.length)]} ${left} to go` : 'That\'s every stop! 🎉',
         'Undo', () => { s.visited = false; refresh(); });
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const colors = ['#ff5d8f', '#ffcf3f', '#1e8a5a', '#2a5fd4', '#c45a12'];
+  const colors = ['#ff5d8f', '#ffcf3f', '#187a4e', '#2a5fd4', '#c45a12'];
   for (let i = 0; i < (left ? 40 : 120); i++) {
     const c = document.createElement('div');
     c.className = 'confetti';
